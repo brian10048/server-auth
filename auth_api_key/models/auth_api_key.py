@@ -23,6 +23,9 @@ class AuthApiKey(models.Model):
         help="""The user used to process the requests authenticated by
         the api key""",
     )
+    # Not using related to stay backward compatible with having active key
+    # for an archived user (no need to be charged on active user for the api)
+    active = fields.Boolean(compute="_compute_active", readonly=False, store=True)
 
     _sql_constraints = [("name_uniq", "unique(name)", "Api Key name must be unique.")]
 
@@ -49,12 +52,17 @@ class AuthApiKey(models.Model):
         self._retrieve_api_key_id.clear_cache(self.env[self._name])
         self._retrieve_uid_from_api_key.clear_cache(self.env[self._name])
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        records = super(AuthApiKey, self).create(vals_list)
-        if any(["key" in vals or "user_id" in vals for vals in vals_list]):
+    @api.depends("user_id.active")
+    def _compute_active(self):
+        for record in self:
+            record.active = record.user_id.active
+
+    @api.model
+    def create(self, vals):
+        record = super(AuthApiKey, self).create(vals)
+        if "key" in vals or "user_id" in vals:
             self._clear_key_cache()
-        return records
+        return record
 
     def write(self, vals):
         super(AuthApiKey, self).write(vals)
